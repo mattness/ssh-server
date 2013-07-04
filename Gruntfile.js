@@ -19,5 +19,21 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 
-module.exports = {
+module.exports = function(grunt) {
+  grunt.initConfig({
+
+    jshint: {
+      all: ['Gruntfile.js', '**/*.js', '!node_modules/**/*.js']
+    },
+
+    nodeunit: {
+      all: ['test/**/*_tests.js']
+    }
+  });
+
+  grunt.loadNpmTasks('grunt-contrib-jshint');
+  grunt.loadNpmTasks('grunt-contrib-nodeunit');
+
+  grunt.registerTask('default', ['jshint', 'test']);
+  grunt.registerTask('test', ['nodeunit']);
 };

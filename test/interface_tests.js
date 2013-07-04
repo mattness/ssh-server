@@ -19,5 +19,14 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 
-module.exports = {
+var path = require('path');
+var pkginfo = require('../package.json');
+
+exports.testInterface = function(t) {
+  var libpath = path.join('..', path.dirname(pkginfo.main),
+    path.basename(pkginfo.main, '.js'));
+  var lib = require(libpath);
+
+  t.equals(typeof lib, 'object', 'library exports an object');
+  t.done();
 };
