@@ -21,12 +21,11 @@
 
 var path = require('path');
 var pkginfo = require('../package.json');
+var libpath = path.join('..', path.dirname(pkginfo.main),
+    path.basename(pkginfo.main, '.js'));
 
 exports.testInterface = function(t) {
-  var libpath = path.join('..', path.dirname(pkginfo.main),
-    path.basename(pkginfo.main, '.js'));
   var lib = require(libpath);
-
-  t.equals(typeof lib, 'object', 'library exports an object');
+  t.equals(typeof lib, 'function', 'library exports an function');
   t.done();
 };
