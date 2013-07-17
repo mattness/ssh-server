@@ -35,6 +35,9 @@ exports.testInterface = function(t) {
   t.equal(typeof stream.pipe, 'function', 'should have a pipe function');
   t.equal(typeof stream.unpipe, 'function', 'should have an unpipe function');
 
+  // SSH Protocol Implementation
+  t.equal(typeof stream.setMac, 'function', 'should have a setMac function');
+
   t.done();
 };
 
@@ -71,6 +74,73 @@ exports.basicWriting = {
       t.equal(packet[4], 9, 'padding size should be 9');
     });
 
+    this.stream.end(this.payload);
+  },
+
+  testSequenceTracking: function(t) {
+    var self = this;
+
+    t.expect(2);
+    this.stream.once('readable', this.stream.read);
+    this.stream.on('end', function() {
+      t.equal(self.stream._sequence, 1, 'sequence number should be 1');
+      t.done();
+    });
+
+    t.equal(this.stream._sequence, 0, 'sequence number should start at 0');
+    this.stream.end(this.payload);
+  },
+
+  testSequenceWrapping: function(t) {
+    var self = this;
+
+    t.expect(1);
+    this.stream.once('readable', this.stream.read);
+    this.stream.on('end', function() {
+      t.equal(self.stream._sequence, 0, 'sequence number should wrap around to 0');
+      t.done();
+    });
+
+    this.stream._sequence = Math.pow(2, 32) - 1;
+    this.stream.end(this.payload);
+  }
+};
+
+exports.macWriting = {
+  setUp: function(cb) {
+    this.stream = new SshOutputStream();
+    this.payload = new Buffer(18);
+    this.payload.fill(1);
+    this.macAlgorithm = 'sha1';
+    this.macKey = new Buffer('my hmac secret key!!');
+    cb();
+  },
+
+  testMac: function(t) {
+    var self = this;
+
+    t.expect(22);
+    this.stream.on('end', t.done);
+    this.stream.once('readable', function() {
+      var packet = self.stream.read();
+      var actualMac = packet.slice(-20);
+      t.equal(packet.length, self.payload.length + 5 + 9 + 20,
+        // 18 payload + 5 header + 9 padding + 20 mac = 52
+        'packet length should be 52');
+
+      var hmac = require('crypto').createHmac(self.macAlgorithm, self.macKey);
+      hmac.end(Buffer.concat([new Buffer([0,0,0,0]), packet.slice(0, -20)]));
+      hmac.on('readable', function() {
+        var expectedMac = new Buffer(hmac.read());
+
+        t.equal(actualMac.length, expectedMac.length, 'lengths should match');
+        for (var i = 0; i < expectedMac.length; i++) {
+          t.equal(actualMac[i], expectedMac[i], 'byte ' + i + 'should match');
+        }
+      });
+    });
+
+    this.stream.setMac(this.macAlgorithm, this.macKey);
     this.stream.end(this.payload);
   }
 };

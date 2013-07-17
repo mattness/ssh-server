@@ -27,15 +27,20 @@ var crypto = require('crypto');
 
 util.inherits(SshOutputStream, Transform);
 SshOutputStream.prototype._transform = _transform;
+SshOutputStream.prototype.setMac = _setMac;
 
 var MIN_PADDING_SIZE = 4;  // RFC 4253, Section 6 (random padding)
 var MAX_PADDING_SIZE = 255; // RFC 4253, Section 6 (random padding)
+var MAX_SEQUENCE_NUMBER = Math.pow(2, 32);
 var HEADER_SIZE = 5;  // 4-byte packet_length + 1 byte padding length
 
 function _transform(chunk, encoding, done) {
   var self = this;
+  var macAlgorithm = this._macAlgorithm;
+  var macKey = this._macKey;
 
   // 1.  Figure out what the payload size is
+  // TODO (mattness):  Support payload compression
   var payloadSize = chunk.length;
 
   // 2.  Figure out what the padding size should be
@@ -82,10 +87,34 @@ function _transform(chunk, encoding, done) {
     // And our padding
     padding.copy(packet, HEADER_SIZE + payloadSize);
 
+    // If we've negotiated a MAC algorithm, run it
+    var mac;
+    if (self._macAlgorithm) {
+      var hmac = crypto.createHmac(macAlgorithm, macKey);
+      var seqNumBuffer = new Buffer(4);
+      seqNumBuffer.writeUInt32BE(self._sequence, 0);
+      hmac.update(Buffer.concat([seqNumBuffer, packet]));
+      mac = new Buffer(hmac.digest());
+      hmac = null;  // unref so it can be gc'd asap
+    }
+
+    if (mac) packet = Buffer.concat([packet, mac]);
+
     // Finally, send the packet downstream
     self.push(packet);
+    self._sequence = ++self._sequence % MAX_SEQUENCE_NUMBER;
     done();
   });
+}
+
+function _setMac(algorithm, key) {
+  if (!algorithm) {
+    this._macAlgorithm = null;
+    this._macKey = null;
+  } else {
+    this._macAlgorithm = algorithm;
+    this._macKey = key;
+  }
 }
 
 function SshOutputStream() {
@@ -93,5 +122,8 @@ function SshOutputStream() {
     return new SshOutputStream();
 
   this._cipherBlockSize = 8;
+  this._sequence = 0;
+  this._macAlgorithm = null;
+  this._macKey = null;
   Transform.call(this);
 }
