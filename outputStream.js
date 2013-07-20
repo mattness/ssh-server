@@ -28,6 +28,7 @@ var crypto = require('crypto');
 util.inherits(SshOutputStream, Transform);
 SshOutputStream.prototype._transform = _transform;
 SshOutputStream.prototype.setMac = _setMac;
+SshOutputStream.prototype.setCipher = _setCipher;
 
 var MIN_PADDING_SIZE = 4;  // RFC 4253, Section 6 (random padding)
 var MAX_PADDING_SIZE = 255; // RFC 4253, Section 6 (random padding)
@@ -38,18 +39,21 @@ function _transform(chunk, encoding, done) {
   var self = this;
   var macAlgorithm = this._macAlgorithm;
   var macKey = this._macKey;
+  var cipher = this._cipher;
 
   // 1.  Figure out what the payload size is
   // TODO (mattness):  Support payload compression
   var payloadSize = chunk.length;
 
+  // Figure out what the block size should be
+  var blockSize = Math.max(this._cipherBlockSize, 8);
+
   // 2.  Figure out what the padding size should be
-  var paddingSize = this._cipherBlockSize -
-    ((HEADER_SIZE + payloadSize) % this._cipherBlockSize);
+  var paddingSize = blockSize - ((HEADER_SIZE + payloadSize) % blockSize);
 
   // 3.  Make sure we have at least MIN_PADDING_SIZE bytes of padding
   while (paddingSize < MIN_PADDING_SIZE) {
-    paddingSize += this._cipherBlockSize;
+    paddingSize += blockSize;
   }
 
   // 4.  Make sure we have no more than MAX_PADDING_SIZE bytes of padding
@@ -98,6 +102,7 @@ function _transform(chunk, encoding, done) {
       hmac = null;  // unref so it can be gc'd asap
     }
 
+    if (cipher) packet = cipher.update(packet);
     if (mac) packet = Buffer.concat([packet, mac]);
 
     // Finally, send the packet downstream
@@ -117,13 +122,30 @@ function _setMac(algorithm, key) {
   }
 }
 
+function _setCipher(cipher, blockSize) {
+  if (!cipher) {
+    this._cipher = null;
+    this._cipherBlockSize = 0;
+  }
+
+  if (cipher instanceof crypto.Cipheriv) {
+    this._cipher = cipher;
+    this._cipherBlockSize = blockSize || 0;
+  }
+}
+
 function SshOutputStream() {
   if (!(this instanceof SshOutputStream))
     return new SshOutputStream();
 
-  this._cipherBlockSize = 8;
+  // Encryption
+  this._cipher = null;
+  this._cipherBlockSize = 0;
+
+  // Message Authentication
   this._sequence = 0;
   this._macAlgorithm = null;
   this._macKey = null;
+
   Transform.call(this);
 }

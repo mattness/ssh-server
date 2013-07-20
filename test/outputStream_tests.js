@@ -20,6 +20,7 @@
 // IN THE SOFTWARE.
 
 var PassThrough = require('stream').PassThrough;
+var crypto = require('crypto');
 var SshOutputStream = require('../outputStream');
 
 exports.testInterface = function(t) {
@@ -141,6 +142,106 @@ exports.macWriting = {
     });
 
     this.stream.setMac(this.macAlgorithm, this.macKey);
+    this.stream.end(this.payload);
+  }
+};
+
+exports.crypto = {
+  setUp: function(cb) {
+    this.stream = new SshOutputStream();
+    this.payload = new Buffer(18);
+    this.payload.fill(1);
+    this.cryptoKey = new Buffer([
+      0x51, 0xad, 0x46, 0x80, 0x8a, 0xad, 0x48, 0x18,
+      0xd1, 0x36, 0x03, 0x0e, 0x32, 0xee, 0x16, 0x72,
+      0xf1, 0x9a, 0xdc, 0x67, 0xf7, 0x77, 0x03, 0x8f,
+      0x96, 0xf2, 0xca, 0x6d, 0x7b, 0x70, 0x35, 0x4b
+    ]);
+    this.cryptoIv = new Buffer([
+      0x6b, 0xed, 0xeb, 0xb1,
+      0x7f, 0xb5, 0x14, 0x96,
+      0x6f, 0x06, 0x5e, 0x0b,
+      0xb6, 0x02, 0x3c, 0x51
+    ]);
+    this.cipher = crypto.createCipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.decipher = crypto.createDecipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.cipherBlockSize = 16;
+    cb();
+  },
+
+  testSettingCipher: function(t) {
+    t.equal(this.stream._cipher, null, 'should start with no cipher');
+    t.equal(this.stream._cipherBlockSize, 0, 'default blockSize should be 0');
+
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    t.equal(this.stream._cipher, this.cipher,
+      'sane arguments should be honored');
+    t.equal(this.stream._cipherBlockSize, this.cipherBlockSize,
+      'sane arguments should be honored');
+
+    this.stream.setCipher('garbage', 19);
+    t.equal(this.stream._cipher, this.cipher,
+      'insane arguments should be ignored');
+    t.equal(this.stream._cipherBlockSize, this.cipherBlockSize,
+      'insane arguments should be ignored');
+
+    this.stream.setCipher();
+    t.equal(this.stream._cipher, null,
+      'calling with no arguments should clear cipher');
+    t.equal(this.stream._cipherBlockSize, 0,
+      'calling with no arguments should reset blockSize to 0');
+    t.done();
+  },
+
+  testPacketLength: function(t) {
+    var self = this;
+
+    t.expect(1);
+    this.stream.on('end', t.done);
+    this.stream.once('readable', function() {
+      var packet = self.stream.read();
+      t.equal(packet.length % self.cipherBlockSize, 0,
+        'packet length should be a multiple of cipherBlockSize');
+    });
+
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    this.stream.end(this.payload);
+  },
+
+  testPadding: function(t) {
+    var self = this;
+
+    t.expect(1);
+    this.stream.on('end', t.done);
+    this.stream.once('readable', function() {
+      var packet = self.stream.read();
+      packet = self.decipher.update(packet);
+      t.equal(packet[4], 9, 'padding size should be 9');
+    });
+
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    this.stream.end(this.payload);
+  },
+
+  testEncryption: function(t) {
+    var self = this;
+
+    t.expect(2);
+    this.stream.on('end', t.done);
+    this.stream.on('readable', function() {
+      var packet = self.stream.read();
+      t.notEqual(packet.slice(5, self.payload.length + 5).toString('binary'),
+        self.payload.toString('binary'), 'payload should be incomprehensible');
+
+      packet = self.decipher.update(packet);
+      t.equal(packet.slice(5, self.payload.length + 5).toString('binary'),
+        self.payload.toString('binary'),
+        'deciphered packet should reveal payload');
+    });
+
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
     this.stream.end(this.payload);
   }
 };
