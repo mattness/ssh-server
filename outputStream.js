@@ -34,6 +34,8 @@ var MIN_PADDING_SIZE = 4;  // RFC 4253, Section 6 (random padding)
 var MAX_PADDING_SIZE = 255; // RFC 4253, Section 6 (random padding)
 var MAX_SEQUENCE_NUMBER = Math.pow(2, 32);
 var HEADER_SIZE = 5;  // 4-byte packet_length + 1 byte padding length
+var MAX_MAC_PACKETS = Math.pow(2, 31); // RFC 4344, Section 3.1 (First Rekeying)
+var MAX_KEY_BLOCKS = (Math.pow(1024, 3) / 8); // RFC 4344, Section 3.2 (Second Rekeying)
 
 function _transform(chunk, encoding, done) {
   var self = this;
@@ -102,12 +104,27 @@ function _transform(chunk, encoding, done) {
       hmac = null;  // unref so it can be gc'd asap
     }
 
-    if (cipher) packet = cipher.update(packet);
-    if (mac) packet = Buffer.concat([packet, mac]);
+    if (cipher) {
+      self._blocksRemaining -= (packet.length / blockSize);
+      packet = cipher.update(packet);
+    }
+
+    if (mac) {
+      packet = Buffer.concat([packet, mac]);
+      self._packetsRemaining -= 1;
+    }
 
     // Finally, send the packet downstream
     self.push(packet);
     self._sequence = ++self._sequence % MAX_SEQUENCE_NUMBER;
+
+    // If we've written enough data with these keys, let someone know that
+    // it's time to rekey
+    if (self._packetsRemaining === 0 || self._blocksRemaining <= 0) {
+      // TODO (mattness): Probably need to buffer all writes while waiting
+      self.emit('rekey_needed');
+    }
+
     done();
   });
 }
@@ -120,17 +137,26 @@ function _setMac(algorithm, key) {
     this._macAlgorithm = algorithm;
     this._macKey = key;
   }
+
+  // RFC 4344, Section 3.1 (First Rekeying Recommendation)
+  this._packetsRemaining = MAX_MAC_PACKETS;
 }
 
 function _setCipher(cipher, blockSize) {
   if (!cipher) {
     this._cipher = null;
     this._cipherBlockSize = 0;
+    this._blocksRemaining = MAX_KEY_BLOCKS;
   }
 
   if (cipher instanceof crypto.Cipheriv) {
     this._cipher = cipher;
     this._cipherBlockSize = blockSize || 0;
+
+    // RFC 4344, Section 3.2 (Second Rekeying Recommendation)
+    var blockBits = blockSize * 8;
+    this._blocksRemaining = blockBits < 128 ? MAX_KEY_BLOCKS :
+      Math.pow(2, (blockBits / 4));
   }
 }
 
@@ -146,6 +172,10 @@ function SshOutputStream() {
   this._sequence = 0;
   this._macAlgorithm = null;
   this._macKey = null;
+
+  // Rekey tracking
+  this._packetsRemaining = MAX_MAC_PACKETS;
+  this._blocksRemaining = MAX_KEY_BLOCKS;
 
   Transform.call(this);
 }

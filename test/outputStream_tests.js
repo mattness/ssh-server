@@ -117,6 +117,18 @@ exports.macWriting = {
     cb();
   },
 
+  testSettingMac: function(t) {
+    this.stream._packetsRemaining = 1;
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    t.equal(this.stream._packetsRemaining, Math.pow(2, 31),
+      'setting mac should reset packetsRemaining');
+
+    this.stream.setMac();
+    t.equal(this.stream._packetsRemaining, Math.pow(2, 31),
+      'calling with no arguments should reset packetsRemaining');
+    t.done();
+  },
+
   testMac: function(t) {
     var self = this;
 
@@ -174,24 +186,34 @@ exports.crypto = {
   testSettingCipher: function(t) {
     t.equal(this.stream._cipher, null, 'should start with no cipher');
     t.equal(this.stream._cipherBlockSize, 0, 'default blockSize should be 0');
+    t.equal(this.stream._blocksRemaining, (Math.pow(1024, 3) / 8),
+      'default blocks remaining should be 1 GiB / 8');
 
     this.stream.setCipher(this.cipher, this.cipherBlockSize);
     t.equal(this.stream._cipher, this.cipher,
       'sane arguments should be honored');
     t.equal(this.stream._cipherBlockSize, this.cipherBlockSize,
       'sane arguments should be honored');
+    t.equal(this.stream._blocksRemaining,
+      Math.pow(2, (this.cipherBlockSize * 2)),
+      'sane arguments should set blocksRemaining to 2**(L/4)');
 
     this.stream.setCipher('garbage', 19);
     t.equal(this.stream._cipher, this.cipher,
       'insane arguments should be ignored');
     t.equal(this.stream._cipherBlockSize, this.cipherBlockSize,
       'insane arguments should be ignored');
+    t.equal(this.stream._blocksRemaining,
+      Math.pow(2, (this.cipherBlockSize * 2)),
+      'insane arguments should not reset blocksRemaining');
 
     this.stream.setCipher();
     t.equal(this.stream._cipher, null,
       'calling with no arguments should clear cipher');
     t.equal(this.stream._cipherBlockSize, 0,
       'calling with no arguments should reset blockSize to 0');
+    t.equal(this.stream._blocksRemaining, (Math.pow(1024, 3) / 8),
+      'calling with no arguments should reset blocks remaining to 1 GiB / 8');
     t.done();
   },
 
@@ -242,6 +264,56 @@ exports.crypto = {
     });
 
     this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    this.stream.end(this.payload);
+  }
+};
+
+exports.rekeying = {
+  setUp: function(cb) {
+    this.stream = new SshOutputStream();
+    this.payload = new Buffer(18);
+    this.payload.fill(1);
+    this.cryptoKey = new Buffer([
+      0x51, 0xad, 0x46, 0x80, 0x8a, 0xad, 0x48, 0x18,
+      0xd1, 0x36, 0x03, 0x0e, 0x32, 0xee, 0x16, 0x72,
+      0xf1, 0x9a, 0xdc, 0x67, 0xf7, 0x77, 0x03, 0x8f,
+      0x96, 0xf2, 0xca, 0x6d, 0x7b, 0x70, 0x35, 0x4b
+    ]);
+    this.cryptoIv = new Buffer([
+      0x6b, 0xed, 0xeb, 0xb1,
+      0x7f, 0xb5, 0x14, 0x96,
+      0x6f, 0x06, 0x5e, 0x0b,
+      0xb6, 0x02, 0x3c, 0x51
+    ]);
+    this.cipher = crypto.createCipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.decipher = crypto.createDecipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.cipherBlockSize = 16;
+    this.macAlgorithm = 'sha1';
+    this.macKey = new Buffer('my hmac secret key!!');
+    cb();
+  },
+
+  testMaxPackets: function(t) {
+    this.stream.on('rekey_needed', t.done);
+    this.stream.on('readable', this.stream.read);
+
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    this.stream._packetsRemaining = 1;
+
+    this.stream.end(this.payload);
+  },
+
+  testMaxXferBytes: function(t) {
+    this.stream.on('rekey_needed', t.done);
+    this.stream.on('readable', this.stream.read);
+
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    this.stream.setCipher(this.cipher, this.cipherBlockSize);
+    this.stream._blocksRemaining = 1;
+
     this.stream.end(this.payload);
   }
 };
