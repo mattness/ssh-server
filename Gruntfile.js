@@ -28,11 +28,17 @@ module.exports = function(grunt) {
 
     nodeunit: {
       all: ['test/**/*_tests.js']
+    },
+
+    watch: {
+      files: ['**/*.js'],
+      tasks: ['jshint', 'test']
     }
   });
 
   grunt.loadNpmTasks('grunt-contrib-jshint');
   grunt.loadNpmTasks('grunt-contrib-nodeunit');
+  grunt.loadNpmTasks('grunt-contrib-watch');
 
   grunt.registerTask('default', ['jshint', 'test']);
   grunt.registerTask('test', ['nodeunit']);
