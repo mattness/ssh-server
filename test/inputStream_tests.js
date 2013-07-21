@@ -111,3 +111,106 @@ exports.basicReading = {
     this.stream.end(Buffer.concat([this.payload, this.payload]));
   }
 };
+
+exports.macReading = {
+  setUp: function(cb) {
+    this.stream = new SshInputStream();
+    this.payload = new Buffer(52);
+    this.payload.writeUInt32BE(28, 0);  // Packet size
+    this.payload.writeUInt8(9, 4);  // Padding Size
+    this.payload.fill(1, 5, 23); // Payload bytes
+    this.payload.fill(8, 23);  // Padding bytes
+    new Buffer([
+      0xca, 0xfd, 0x0c, 0xb7, 0x2e,
+      0x6a, 0xcb, 0x5a, 0xb9, 0x5d,
+      0x94, 0xfe, 0xb9, 0x80, 0x07,
+      0x30, 0x0e, 0x08, 0x7e, 0xe4
+    ]).copy(this.payload, 32);
+    this.macAlgorithm = 'sha1';
+    this.macKey = new Buffer('my hmac secret key!!');
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    cb();
+  },
+
+  testMac: function(t) {
+    var self = this;
+
+    t.expect(19);
+    this.stream.on('end', t.done);
+    this.stream.on('error', t.ifError);
+    this.stream.once('readable', function() {
+      var packet = self.stream.read();
+      t.equal(packet.length, 18,
+        'packet length should match original payload length');
+
+      for (var i = 0; i < packet.length; i++) {
+        t.equal(packet[i], 1, 'Packet byte ' + i + ' should be 1');
+      }
+    });
+
+    this.stream.end(this.payload);
+  },
+
+  testMacError: function(t) {
+    t.expect(1);
+    this.stream.on('end', t.done);
+    this.stream.on('error', t.ok);
+    this.stream.once('readable', this.stream.read);
+
+    this.payload[this.payload.length - 1] += 1;
+    this.stream.end(this.payload);
+  },
+
+  testReadingPartialPacket: function(t) {
+    var self = this;
+
+    t.expect(19);
+    this.stream.on('end', t.done);
+    this.stream.on('error', t.ifError);
+    this.stream.once('readable', function() {
+      var packet = self.stream.read();
+      t.equal(packet.length, 18,
+        'packet length should match original payload length');
+
+      for (var i = 0; i < packet.length; i++) {
+        t.equal(packet[i], 1, 'Packet byte ' + i + ' should be 1');
+      }
+    });
+
+    this.stream.write(this.payload.slice(0, 2));
+    this.stream.write(this.payload.slice(2, 3));
+    this.stream.write(this.payload.slice(3, 5));
+    this.stream.end(this.payload.slice(5));
+  },
+
+  testReadingMultiplePackets: function(t) {
+    var self = this;
+    var count = 0;
+
+    t.expect(39);
+    this.stream.on('end', function A() {
+      t.equal(count, 2, 'should read 2 total packets');
+      t.done();
+    });
+    this.stream.on('error', t.ifError);
+    this.stream.on('readable', function B() {
+      count++;
+      var packet = self.stream.read();
+      t.equal(packet.length, 18,
+        'packet length should match original payload length');
+
+      for (var i = 0; i < packet.length; i++) {
+        t.equal(packet[i], 1, 'Packet byte ' + i + ' should be 1');
+      }
+    });
+
+    var dblmsg = Buffer.concat([this.payload, this.payload]);
+    new Buffer([
+      0x29, 0x68, 0x2b, 0x2a, 0x4e,
+      0x72, 0x13, 0x22, 0x1b, 0xbf,
+      0xb4, 0x9c, 0xa2, 0x5a, 0xc0,
+      0x6f, 0xaa, 0x30, 0x88, 0xb0
+    ]).copy(dblmsg, 84);
+    this.stream.end(dblmsg);
+  }
+};
