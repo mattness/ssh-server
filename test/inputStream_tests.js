@@ -35,6 +35,9 @@ exports.testInterface = function(t) {
   t.equal(typeof stream.pipe, 'function', 'should have a pipe function');
   t.equal(typeof stream.unpipe, 'function', 'should have an unpipe function');
 
+  // SSH Protocol Implementation
+  t.equal(typeof stream.setMac, 'function', 'should have a setMac function');
+
   t.done();
 };
 
@@ -130,6 +133,18 @@ exports.macReading = {
     this.macKey = new Buffer('my hmac secret key!!');
     this.stream.setMac(this.macAlgorithm, this.macKey);
     cb();
+  },
+
+  testSettingMac: function(t) {
+    this.stream._packetsRemaining = 1;
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    t.equal(this.stream._packetsRemaining, Math.pow(2, 31),
+      'setting mac should reset packetsRemaining');
+
+    this.stream.setMac();
+    t.equal(this.stream._packetsRemaining, Math.pow(2, 31),
+      'calling with no arguments should reset packetsRemaining');
+    t.done();
   },
 
   testMac: function(t) {
