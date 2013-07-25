@@ -28,11 +28,13 @@ var crypto = require('crypto');
 util.inherits(SshInputStream, Transform);
 SshInputStream.prototype._transform = _transform;
 SshInputStream.prototype.setMac = _setMac;
+SshInputStream.prototype.setCipher = _setCipher;
 
 var PACKET_LENGTH_FIELD_SIZE = 4;
 var HEADER_SIZE = PACKET_LENGTH_FIELD_SIZE + 1;  // packet length + 1 byte padding length
 var MAX_MAC_PACKETS = Math.pow(2, 31); // RFC 4344, Section 3.1 (First Rekeying)
 var MAX_SEQUENCE_NUMBER = Math.pow(2, 32);
+var MAX_KEY_BLOCKS = (Math.pow(1024, 3) / 8); // RFC 4344, Section 3.2 (Second Rekeying)
 
 function _transform(chunk, encoding, done) {
   if (this._packetInProgress && !this._bytesPending) {
@@ -66,8 +68,14 @@ function _transform(chunk, encoding, done) {
       break;
     }
 
+    if(this._cipher && this._bytesDecrypted === 0) {
+      chunk = this._cipher.update(chunk);
+      this._bytesDecrypted = chunk.length;
+    }
+
     var packetLength = chunk.readUInt32BE(0);
     var expectedLength = packetLength + this._macLength;
+    var encryptedLength = PACKET_LENGTH_FIELD_SIZE + packetLength;
 
     // If the packet length is greater than what's left in the chunk, queue it
     if (expectedLength > (chunk.length - PACKET_LENGTH_FIELD_SIZE)) {
@@ -78,9 +86,26 @@ function _transform(chunk, encoding, done) {
       break;
     }
 
-    // Otherwise, parse it and push it down the pipe.
+    // We've got the whole packet now, decrypt the rest of it
+    if (this._cipher) {
+      if (this._bytesDecrypted < encryptedLength) {
+        chunk = Buffer.concat([
+          chunk.slice(0, this._bytesDecrypted),
+          this._cipher.update(chunk.slice(this._bytesDecrypted,
+            encryptedLength)),
+          // Don't forget to save the MAC if it's there
+          chunk.slice(encryptedLength)
+        ]);
+      }
+
+      // Reset _bytesDecrypted for the next packet
+      this._bytesDecrypted = 0;
+    }
+
+    // Parse it and push it down the pipe.
     if (this._macAlgorithm) {
-      var macIdx = PACKET_LENGTH_FIELD_SIZE + packetLength;
+      var macIdx = encryptedLength; // MAC starts where crypto ends, macIdx is
+                                    // just to help readability
       var mac = chunk.slice(macIdx, macIdx + this._macLength);
       var packet = chunk.slice(0, macIdx);
       var seqNumBuffer = new Buffer(4);
@@ -140,9 +165,29 @@ function _setMac(algorithm, key, digestLength) {
   this._packetsRemaining = MAX_MAC_PACKETS;
 }
 
+function _setCipher(cipher, blockSize) {
+  if (!cipher) {
+    this._cipher = null;
+    this._blocksRemaining = MAX_KEY_BLOCKS;
+  }
+
+  if (cipher instanceof crypto.Decipheriv) {
+    this._cipher = cipher;
+
+    // RFC 4344, Section 3.2 (Second Rekeying Recommendation)
+    var blockBits = blockSize * 8;
+    this._blocksRemaining = blockBits < 128 ? MAX_KEY_BLOCKS :
+      Math.pow(2, (blockBits / 4));
+  }
+}
+
 function SshInputStream() {
   if (!(this instanceof SshInputStream))
     return new SshInputStream();
+
+  // Encryption
+  this._cipher = null;
+  this._bytesDecrypted = 0;
 
   // Message Authentication
   this._sequence = 0;
@@ -152,6 +197,7 @@ function SshInputStream() {
 
   // Rekey Tracking
   this._packetsRemaining = MAX_MAC_PACKETS;
+  this._blocksRemaining = MAX_KEY_BLOCKS;
 
   this._packetInProgress = false;
   this._bytesPending = 0;
