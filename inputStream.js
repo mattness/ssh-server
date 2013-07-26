@@ -69,8 +69,11 @@ function _transform(chunk, encoding, done) {
     }
 
     if(this._cipher && this._bytesDecrypted === 0) {
-      chunk = this._cipher.update(chunk);
-      this._bytesDecrypted = chunk.length;
+      // Decrypt the packet length part of the buffer, and replace those
+      // bytes in the buffer with the plaintext bytes
+      this._cipher.update(chunk.slice(0, PACKET_LENGTH_FIELD_SIZE)).copy(
+        chunk, 0);
+      this._bytesDecrypted = PACKET_LENGTH_FIELD_SIZE;
     }
 
     var packetLength = chunk.readUInt32BE(0);
@@ -100,6 +103,7 @@ function _transform(chunk, encoding, done) {
 
       // Reset _bytesDecrypted for the next packet
       this._bytesDecrypted = 0;
+      this._blocksRemaining -= (encryptedLength / this._cipherBlockSize);
     }
 
     // Parse it and push it down the pipe.
@@ -112,6 +116,7 @@ function _transform(chunk, encoding, done) {
       seqNumBuffer.writeUInt32BE(this._sequence, 0);
       var hmac = crypto.createHmac(this._macAlgorithm, this._macKey);
       hmac.update(Buffer.concat([seqNumBuffer, packet]));
+      this._packetsRemaining -= 1;
 
       if (mac.toString('binary') != hmac.digest().toString('binary')) {
         this.emit('error', new Error('Message Integrity Failure'));
@@ -132,6 +137,10 @@ function _transform(chunk, encoding, done) {
 
     this.push(payload);
     this._sequence = ++this._sequence % MAX_SEQUENCE_NUMBER;
+
+    if (this._packetsRemaining === 0 || this._blocksRemaining <= 0) {
+      this.emit('rekey_needed');
+    }
 
     // slice of what's left of the chunk, and make another pass
     chunk = chunk.slice(PACKET_LENGTH_FIELD_SIZE + packetLength);
@@ -168,11 +177,13 @@ function _setMac(algorithm, key, digestLength) {
 function _setCipher(cipher, blockSize) {
   if (!cipher) {
     this._cipher = null;
+    this._cipherBlockSize = 0;
     this._blocksRemaining = MAX_KEY_BLOCKS;
   }
 
   if (cipher instanceof crypto.Decipheriv) {
     this._cipher = cipher;
+    this._cipherBlockSize = blockSize;
 
     // RFC 4344, Section 3.2 (Second Rekeying Recommendation)
     var blockBits = blockSize * 8;
@@ -187,6 +198,7 @@ function SshInputStream() {
 
   // Encryption
   this._cipher = null;
+  this._cipherBlockSize = 0;
   this._bytesDecrypted = 0;
 
   // Message Authentication

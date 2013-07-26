@@ -326,3 +326,64 @@ exports.crypto = {
     this.stream.end(this.payload.slice(30));
   }
 };
+
+exports.rekeying = {
+  setUp: function(cb) {
+
+    this.stream = new SshInputStream();
+    this.payload = new Buffer(52);
+    this.payload.writeUInt32BE(28, 0);
+    this.payload.writeUInt8(9, 4);
+    this.payload.fill(1, 5, 23);
+    this.payload.fill(8, 23);
+    this.cryptoKey = new Buffer([
+      0x51, 0xad, 0x46, 0x80, 0x8a, 0xad, 0x48, 0x18,
+      0xd1, 0x36, 0x03, 0x0e, 0x32, 0xee, 0x16, 0x72,
+      0xf1, 0x9a, 0xdc, 0x67, 0xf7, 0x77, 0x03, 0x8f,
+      0x96, 0xf2, 0xca, 0x6d, 0x7b, 0x70, 0x35, 0x4b
+    ]);
+    this.cryptoIv = new Buffer([
+      0x6b, 0xed, 0xeb, 0xb1,
+      0x7f, 0xb5, 0x14, 0x96,
+      0x6f, 0x06, 0x5e, 0x0b,
+      0xb6, 0x02, 0x3c, 0x51
+    ]);
+    this.cipher = crypto.createCipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.decipher = crypto.createDecipheriv('aes-256-ctr', this.cryptoKey,
+      this.cryptoIv);
+    this.cipherBlockSize = 16;
+    this.payload = this.cipher.update(this.payload);
+    this.macAlgorithm = 'sha1';
+    this.macKey = new Buffer('my hmac secret key!!');
+    new Buffer([
+      0xca, 0xfd, 0x0c, 0xb7, 0x2e,
+      0x6a, 0xcb, 0x5a, 0xb9, 0x5d,
+      0x94, 0xfe, 0xb9, 0x80, 0x07,
+      0x30, 0x0e, 0x08, 0x7e, 0xe4
+    ]).copy(this.payload, 32);
+    cb();
+  },
+
+  testMaxPackets: function(t) {
+    this.stream.on('rekey_needed', t.done);
+    this.stream.on('readable', this.stream.read);
+
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    this.stream.setCipher(this.decipher, this.cipherBlockSize);
+    this.stream._packetsRemaining = 1;
+
+    this.stream.end(this.payload);
+  },
+
+  testMaxXferBytes: function(t) {
+    this.stream.on('rekey_needed', t.done);
+    this.stream.on('readable', this.stream.read);
+
+    this.stream.setMac(this.macAlgorithm, this.macKey);
+    this.stream.setCipher(this.decipher, this.cipherBlockSize);
+    this.stream._blocksRemaining = 1;
+
+    this.stream.end(this.payload);
+  }
+};
