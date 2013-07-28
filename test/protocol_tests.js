@@ -29,34 +29,9 @@ exports.setUp = function(cb) {
 
 exports.publicApi = {
 
-  exposesWriteMethod: function(t) {
-    t.equal(typeof this.proto.write, 'function', 'write is a function');
+  exposesStartMethod: function(t) {
+    t.equal(typeof this.proto.start, 'function', 'start is a function');
     t.done();
-  },
-
-  exposesWriteVersionMethod: function(t) {
-    t.equal(typeof this.proto.writeVersion, 'function',
-      'writeVersion is a function');
-    t.done();
-  }
-
-};
-
-exports.writeMethod = {
-
-  forwardsToUnderlyingStream: function(t) {
-    var testStr = 'asdf';
-    var stream = new PassThrough();
-
-    t.expect(1);
-    stream.on('readable', function() {
-      t.equal(stream.read().toString(), testStr, 'read ' + testStr);
-      stream.end();
-      t.done();
-    });
-
-    this.proto.ostream = stream;
-    this.proto.write(testStr);
   }
 
 };

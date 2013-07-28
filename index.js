@@ -25,36 +25,15 @@ var util = require('util');
 var pkginfo = require('./package.json');
 var Protocol = require('./protocol');
 var defaults = {
-  softwareVersion: 'ssh_server_' + pkginfo.version
+  softwareVersion: 'SshServerJS_' + pkginfo.version,
+  logger: console
 };
 
 function createServer(options) {
   var opts = options || defaults;
 
   function connectionHandler(socket) {
-    var self = this;
-    this.protocol = new Protocol();
-
-    socket.on('readable', function B() {
-      var ident = socket.read();
-      for (var i = 0; i < ident.length; i++) {
-        if (ident[i] === 0xa) break;
-      }
-      console.log('socket: ', ident.slice(0, i + 1).toString());
-      self.protocol.istream.write(ident.slice(i + 1));
-      socket.pipe(self.protocol.istream);
-    });
-
-    this.protocol.istream.on('readable', function A() {
-      console.log('read: ', self.protocol.istream.read().toString());
-    });
-
-    var o = this.protocol.ostream;
-    this.protocol.ostream = socket;
-    this.protocol.writeVersion(opts.softwareVersion, opts.identComment);
-
-    this.protocol.ostream = o;
-    this.protocol.ostream.pipe(socket);
+    new Protocol(opts).start(socket);
   }
 
   return connectionHandler;

@@ -27,22 +27,37 @@ var SshReadableStream = require('./inputStream');
 var SshWritableStream = require('./outputStream');
 
 util.inherits(Protocol, EventEmitter);
-Protocol.prototype.write = _write;
-Protocol.prototype.writeVersion = _writeVersion;
+Protocol.prototype.start = _start;
+Protocol.prototype.createKexInit = _createKexInit;
 
-function _writeVersion(swversion, comment, cb) {
-  if (typeof comment === 'function') {
-    cb = comment;
-    comment = undefined;
-  }
+function _start(socket) {
+  var self = this;
+  this._socket = socket;
 
-  if (/[\x00-\x1F\x20\x2D\x7F-\xFF]/.test(swversion)) {
+  _writeVersion.call(this, this._swversion, this._identComment);
+
+  this._socket.on('readable', function _handleClientIdent() {
+    var ident = self._socket.read();
+    for (var i = 0; i < ident.length; i++) {
+      if (ident[i] === 0xa) break;
+    }
+
+    self._clientIdent = ident.slice(0, i + 1).toString();
+    self._logger.log('rx: ', self._clientIdent);
+
+    self._socket.removeListener('readable', _handleClientIdent);
+    self._readStream.write(ident.slice(i + 1));
+    self._socket.pipe(self._readStream);
+  });
+}
+
+function _writeVersion() {
+  if (/[\x00-\x1F\x20\x2D\x7F-\xFF]/.test(this.swversion)) {
     var err = new Error(
       'Software Version must contain only printable US-ASCII characters ' +
       'and cannot include whitespace or minus sign (-)');
     this.emit('error', err);
-    this.ostream.end();
-    if (!!cb) cb(err);
+    this._socket.end();
     return;
   }
 
@@ -51,22 +66,40 @@ function _writeVersion(swversion, comment, cb) {
   // limit by simply truncating the comment (or swversion if there is no
   // comment)
   var offset = verbuf.write(
-    util.format('SSH-2.0-%s%s', swversion, comment ? ' ' + comment : ''),
-    0, verbuf.length - 2);
+    util.format('SSH-2.0-%s%s', this._swversion,
+      this._comment ? ' ' + this._comment : ''
+    ), 0, verbuf.length - 2
+  );
   offset += verbuf.write('\r\n', offset, 2);
 
+  if (offset < verbuf.length)
+    verbuf = verbuf.slice(0, offset);
+
+  this._serverIdent = verbuf.toString();
+
   // Send everything up to and including the lf down the pipe.
-  this.write(verbuf.slice(0, offset), cb);
+  this._logger.log('tx: ', verbuf.toString());
+  this._socket.write(verbuf);
+  this._writeStream.pipe(this._socket);
 }
 
-function _write() {
-  return this.ostream.write.apply(this.ostream, arguments);
+function _createKexInit() {
 }
 
-function Protocol() {
+function Protocol(opts) {
   if (!(this instanceof Protocol))
-    return new Protocol();
+    return new Protocol(opts);
 
-  this.istream = new SshReadableStream();
-  this.ostream = new SshWritableStream();
+  this._swversion = opts.softwareVersion;
+  this._identComment = opts.identComment;
+  this._logger = opts.logger;
+  this._readStream = new SshReadableStream();
+  this._writeStream = new SshWritableStream();
+
+  this._readStream.on('readable', function A() {
+    this._logger.log('rx: ', this._readStream.read().toString());
+  }.bind(this));
+
+  this._serverIdent = '';
+  this._clientIdent = '';
 }
