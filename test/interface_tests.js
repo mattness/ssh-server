@@ -29,3 +29,13 @@ exports.testInterface = function(t) {
   t.equals(typeof lib, 'function', 'library exports an function');
   t.done();
 };
+
+// exports.errorsOnNonPrintableCharacters = function(t) {
+//   this.proto.on('error', function(err) {
+//     t.ok(err, 'error event should be emitted');
+//   });
+//   this.proto.writeVersion('My\tSSHServer', function(err) {
+//     t.ok(err, 'err is truthy');
+//     t.done();
+//   });
+// };

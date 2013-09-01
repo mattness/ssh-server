@@ -23,8 +23,10 @@ module.exports = Protocol;
 
 var EventEmitter = require('events').EventEmitter;
 var util = require('util');
+var crypto = require('crypto');
 var SshReadableStream = require('./inputStream');
 var SshWritableStream = require('./outputStream');
+var KEXINIT_COOKIE_SIZE = 16;
 
 util.inherits(Protocol, EventEmitter);
 Protocol.prototype.start = _start;
@@ -34,7 +36,12 @@ function _start(socket) {
   var self = this;
   this._socket = socket;
 
-  _writeVersion.call(this, this._swversion, this._identComment);
+  _writeVersion.call(this);
+
+  crypto.randomBytes(KEXINIT_COOKIE_SIZE, function(err, cookie) {
+    if (err) return socket.destroy();
+    // self._writeStream.write(_createKexInit(cookie));
+  });
 
   this._socket.on('readable', function _handleClientIdent() {
     var ident = self._socket.read();
@@ -49,25 +56,17 @@ function _start(socket) {
     self._readStream.write(ident.slice(i + 1));
     self._socket.pipe(self._readStream);
   });
+
 }
 
 function _writeVersion() {
-  if (/[\x00-\x1F\x20\x2D\x7F-\xFF]/.test(this.swversion)) {
-    var err = new Error(
-      'Software Version must contain only printable US-ASCII characters ' +
-      'and cannot include whitespace or minus sign (-)');
-    this.emit('error', err);
-    this._socket.end();
-    return;
-  }
-
   var verbuf = new Buffer(255);
   // Write the string, but save room for the crlf, we enforce the 255 char
   // limit by simply truncating the comment (or swversion if there is no
   // comment)
   var offset = verbuf.write(
     util.format('SSH-2.0-%s%s', this._swversion,
-      this._comment ? ' ' + this._comment : ''
+      this._identComment ? ' ' + this._identComment : ''
     ), 0, verbuf.length - 2
   );
   offset += verbuf.write('\r\n', offset, 2);
@@ -83,7 +82,8 @@ function _writeVersion() {
   this._writeStream.pipe(this._socket);
 }
 
-function _createKexInit() {
+function _createKexInit(cookie) {
+  var msg = new Buffer();
 }
 
 function Protocol(opts) {

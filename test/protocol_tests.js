@@ -23,7 +23,7 @@ var PassThrough = require('stream').PassThrough;
 var Protocol = require('../protocol');
 
 exports.setUp = function(cb) {
-  this.proto = new Protocol();
+  this.proto = new Protocol({ logger: { log: function() { } } });
   cb();
 };
 
@@ -36,6 +36,43 @@ exports.publicApi = {
 
 };
 
+exports.startup = {
+
+  writesCorrectVersionString: function(t) {
+
+    var swversion = 'MySSHServer_1.0.0';
+    var stream = new PassThrough();
+
+    stream.once('readable', function() {
+      t.equal(stream.read().toString(), 'SSH-2.0-MySSHServer_1.0.0\r\n',
+        'written version should be SSH-2.0-MySSHServer_1.0.0\r\n');
+      stream.end();
+      t.done();
+    });
+
+    this.proto._swversion = swversion;
+    this.proto.start(stream);
+  },
+
+  writesCorrectVersionWithComment: function(t) {
+    var swversion = 'MySSHServer_1.0.0';
+    var comment = 'Stable';
+    var stream = new PassThrough();
+
+    stream.once('readable', function() {
+      t.equal(stream.read().toString(), 'SSH-2.0-MySSHServer_1.0.0 Stable\r\n',
+        'written version should be SSH-2.0-MySSHServer_1.0.0 Stable\r\n');
+      stream.end();
+      t.done();
+    });
+
+    this.proto._swversion = swversion;
+    this.proto._identComment = comment;
+    this.proto.start(stream);
+  }
+};
+
+/*
 exports.writeVersionMethod = {
 
   writesCorrectVersionString: function(t) {
@@ -49,8 +86,9 @@ exports.writeVersionMethod = {
       t.done();
     });
 
-    this.proto.ostream = stream;
-    this.proto.writeVersion(swversion);
+    this.proto._socket = stream;
+    this.proto._swversion = swversion;
+    this.proto._writeVersion();
   },
 
   writesCorrectVersionWithComment: function(t) {
@@ -67,16 +105,7 @@ exports.writeVersionMethod = {
 
     this.proto.ostream = stream;
     this.proto.writeVersion(swversion, comment);
-  },
-
-  errorsOnNonPrintableCharacters: function(t) {
-    this.proto.on('error', function(err) {
-      t.ok(err, 'error event should be emitted');
-    });
-    this.proto.writeVersion('My\tSSHServer', function(err) {
-      t.ok(err, 'err is truthy');
-      t.done();
-    });
   }
 
 };
+*/

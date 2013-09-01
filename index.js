@@ -32,6 +32,12 @@ var defaults = {
 function createServer(options) {
   var opts = options || defaults;
 
+  if (/[\x00-\x1F\x20\x2D\x7F-\xFF]/.test(opts.softwareVersion)) {
+    throw new Error(
+      'Software Version must contain only printable US-ASCII characters ' +
+      'and cannot include whitespace or minus sign (-)');
+  }
+
   function connectionHandler(socket) {
     new Protocol(opts).start(socket);
   }
