@@ -24,20 +24,55 @@ var lib = require('../lib/messages.js');
 exports.testInterface = function(t) {
   t.equals(typeof lib, 'object', 'library exports an object');
 
-
+  // Message creation functions
   t.equal(typeof lib.createServerIdent, 'function',
     'should have a createServerIdent function');
+  t.equal(typeof lib.createKexInit, 'function',
+    'should have a createKexInit function');
   t.done();
 };
 
-exports.versionStringCreation = {
-  testHappyPath: function(t) {
-    var swVersion = 'SWVER';
-    var comment = 'COMMENT';
+exports.serverIdentCreation = {
+  setUp: function(cb) {
+    this.swVersion = 'SWVER';
+    this.comment = 'COMMENT';
+    cb();
+  },
 
-    t.equals(lib.createServerIdent(swVersion, comment).toString(),
+  throwsWithNoSwVersion: function(t) {
+    t.throws(lib.createServerIdent);
+    t.done();
+  },
+
+  testWithArguments: function(t) {
+    t.equals(lib.createServerIdent(this.swVersion, this.comment).toString(),
       'SSH-2.0-SWVER COMMENT\r\n',
       'version string should be \'SSH-2.0-SWVER COMMENT\\r\\n\'');
+    t.done();
+  },
+
+  testWithoutComment: function(t) {
+    t.equals(lib.createServerIdent(this.swVersion).toString(),
+      'SSH-2.0-SWVER\r\n',
+      'version string should be \'SSH-2.0-SWVER\\r\\n\'');
+    t.done();
+  },
+
+  testWithEmptyComment: function(t) {
+    t.equals(lib.createServerIdent(this.swVersion, '').toString(),
+      'SSH-2.0-SWVER\r\n',
+      'version string should be \'SSH-2.0-SWVER\\r\\n\'');
+    t.done();
+  }
+};
+
+exports.kexInitCreation = {
+  setUp: function(cb) {
+    cb();
+  },
+
+  testArguments: function(t) {
+    t.throws(lib.createKexInit, 'cookie is a required argument');
     t.done();
   }
 };
