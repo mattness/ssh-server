@@ -2,7 +2,7 @@
   "name": "ssh-server",
   "version": "0.0.1",
   "description": "Javascript library for implementing SSH servers",
-  "main": "index.js",
+  "main": "lib/server.js",
   "devDependencies": {
     "grunt": "0.4.x",
     "grunt-contrib-jshint": "0.6.x",

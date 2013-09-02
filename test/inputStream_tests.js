@@ -21,7 +21,7 @@
 
 var PassThrough = require('stream').PassThrough;
 var crypto = require('crypto');
-var SshInputStream = require('../inputStream');
+var SshInputStream = require('../lib/inputStream');
 
 exports.testInterface = function(t) {
   var stream = new SshInputStream();
