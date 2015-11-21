@@ -31,6 +31,8 @@ exports.testInterface = function(t) {
     'should have a createKexInit function');
   t.equal(typeof lib.parseKexInit, 'function',
     'should have a parseKexInit function');
+  t.equal(typeof lib.createDisconnect, 'function',
+    'should have a createDisconnect function');
   t.equal(typeof lib.createNewKeys, 'function',
     'should have a createNewKeys function');
   t.done();
@@ -233,6 +235,15 @@ exports.kexInitParsing = {
 
     var kexinit = lib.parseKexInit(message);
     t.strictEqual(kexinit.reserved, 9);
+    t.done();
+  }
+};
+
+exports.disconnectCreation = {
+  testCreateDisconnect: function(t) {
+    var expected = new Buffer([1]).toString('binary');
+    var actual = lib.createDisconnect();
+    t.equal(actual.toString('binary'), expected);
     t.done();
   }
 };
