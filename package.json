@@ -25,5 +25,8 @@
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/mattness/ssh-server/issues"
+  },
+  "dependencies": {
+    "utils-merge": "1.0.x"
   }
 }

@@ -28,4 +28,8 @@ IN THE SOFTWARE.
 ===
 
 This licence applies to all parts of ssh-server that are not externally
-maintained libraries.
+maintained libraries.  The externally maintained libraries used by ssh-server
+are:
+
+This program users "utils-merge".  Copyright (c) 2013 Jared Hanson,
+according to the terms of the MIT license.
