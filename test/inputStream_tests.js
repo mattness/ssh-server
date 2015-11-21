@@ -58,8 +58,10 @@ exports.basicReading = {
 
     t.expect(19);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.equal(packet.length, 18,
         'packet length should match original payload length');
 
@@ -102,8 +104,10 @@ exports.basicReading = {
       t.done();
     });
     this.stream.on('readable', function B() {
-      count++;
       var packet = self.stream.read();
+      if (!packet) return;
+
+      count++;
       t.equal(packet.length, 18,
         'packet length should match original payload length');
 
@@ -210,8 +214,10 @@ exports.macReading = {
     });
     this.stream.on('error', t.ifError);
     this.stream.on('readable', function B() {
-      count++;
       var packet = self.stream.read();
+      if (!packet) return;
+
+      count++;
       t.equal(packet.length, 18,
         'packet length should match original payload length');
 
@@ -297,6 +303,8 @@ exports.crypto = {
       expectedPayload.fill(1);
 
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.equal(packet.toString('binary'), expectedPayload.toString('binary'),
         'deciphered packet should reveal payload');
     });
@@ -314,7 +322,10 @@ exports.crypto = {
       var expectedPayload = new Buffer(18);
       expectedPayload.fill(1);
 
-      t.equal(self.stream.read().toString('binary'),
+      var packet = self.stream.read();
+      if (!packet) return;
+
+      t.equal(packet.toString('binary'),
         expectedPayload.toString('binary'),
         'deciphered packet should reveal payload');
     });

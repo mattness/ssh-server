@@ -55,8 +55,10 @@ exports.basicWriting = {
 
     t.expect(2);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.ok(packet.length >= self.payload.length + 5 + 4, // 5 header 4 padding
         'packet length should be at least 9 bytes longer than the payload');
       t.equal(packet.length % 8, 0, 'packet length should be a multiple of 8');
@@ -70,8 +72,10 @@ exports.basicWriting = {
 
     t.expect(1);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.equal(packet[4], 9, 'padding size should be 9');
     });
 
@@ -82,8 +86,7 @@ exports.basicWriting = {
     var self = this;
 
     t.expect(2);
-    this.stream.once('readable', this.stream.read);
-    this.stream.on('end', function() {
+    this.stream.on('finish', function() {
       t.equal(self.stream._sequence, 1, 'sequence number should be 1');
       t.done();
     });
@@ -96,8 +99,7 @@ exports.basicWriting = {
     var self = this;
 
     t.expect(1);
-    this.stream.once('readable', this.stream.read);
-    this.stream.on('end', function() {
+    this.stream.on('finish', function() {
       t.equal(self.stream._sequence, 0, 'sequence number should wrap around to 0');
       t.done();
     });
@@ -134,8 +136,10 @@ exports.macWriting = {
 
     t.expect(22);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       var actualMac = packet.slice(-20);
       t.equal(packet.length, self.payload.length + 5 + 9 + 20,
         // 18 payload + 5 header + 9 padding + 20 mac = 52
@@ -222,8 +226,10 @@ exports.crypto = {
 
     t.expect(1);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.equal(packet.length % self.cipherBlockSize, 0,
         'packet length should be a multiple of cipherBlockSize');
     });
@@ -237,8 +243,10 @@ exports.crypto = {
 
     t.expect(1);
     this.stream.on('end', t.done);
-    this.stream.once('readable', function() {
+    this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       packet = self.decipher.update(packet);
       t.equal(packet[4], 9, 'padding size should be 9');
     });
@@ -254,6 +262,8 @@ exports.crypto = {
     this.stream.on('end', t.done);
     this.stream.on('readable', function() {
       var packet = self.stream.read();
+      if (!packet) return;
+
       t.notEqual(packet.slice(5, self.payload.length + 5).toString('binary'),
         self.payload.toString('binary'), 'payload should be incomprehensible');
 
@@ -297,8 +307,7 @@ exports.rekeying = {
 
   testMaxPackets: function(t) {
     this.stream.on('rekey_needed', t.done);
-    this.stream.on('readable', this.stream.read);
-
+    
     this.stream.setMac(this.macAlgorithm, this.macKey);
     this.stream.setCipher(this.cipher, this.cipherBlockSize);
     this.stream._packetsRemaining = 1;
@@ -308,7 +317,6 @@ exports.rekeying = {
 
   testMaxXferBytes: function(t) {
     this.stream.on('rekey_needed', t.done);
-    this.stream.on('readable', this.stream.read);
 
     this.stream.setMac(this.macAlgorithm, this.macKey);
     this.stream.setCipher(this.cipher, this.cipherBlockSize);
