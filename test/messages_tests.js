@@ -31,6 +31,8 @@ exports.testInterface = function(t) {
     'should have a createKexInit function');
   t.equal(typeof lib.parseKexInit, 'function',
     'should have a parseKexInit function');
+  t.equal(typeof lib.createNewKeys, 'function',
+    'should have a createNewKeys function');
   t.done();
 };
 
@@ -231,6 +233,15 @@ exports.kexInitParsing = {
 
     var kexinit = lib.parseKexInit(message);
     t.strictEqual(kexinit.reserved, 9);
+    t.done();
+  }
+};
+
+exports.newKeysCreation= {
+  testCreateNewKeys: function(t) {
+    var expected = new Buffer([21]).toString('binary');
+    var actual = lib.createNewKeys();
+    t.equal(actual.toString('binary'), expected);
     t.done();
   }
 };
