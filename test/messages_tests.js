@@ -35,6 +35,10 @@ exports.testInterface = function(t) {
     'should have a createDisconnect function');
   t.equal(typeof lib.createNewKeys, 'function',
     'should have a createNewKeys function');
+  t.equal(typeof lib.parseKexdhInit, 'function',
+    'should have a parseKexdhInit function');
+  t.equal(typeof lib.createKexdhReply, 'function',
+    'should have a createKexdhReply function');
   t.done();
 };
 
@@ -139,11 +143,10 @@ exports.kexInitCreation = {
       0x6c, 0x6c, 0x6d, 0x61, 0x6e, 0x2d, 0x67, 0x72,
       0x6f, 0x75, 0x70, 0x31, 0x34, 0x2d, 0x73, 0x68,
       0x61, 0x31
-    ]).toString('binary');
+    ]);
 
     var actual = lib.createKexInit(new Buffer(16), opts);
-    t.equal(actual.slice(17, expected.length + 17).toString('binary'),
-      expected);
+    t.deepEqual(actual.slice(17, expected.length + 17), expected);
     t.done();
   },
 
@@ -171,13 +174,13 @@ exports.kexInitCreation = {
     t.done();
   },
 
-  testReservedByte: function(t) {
+  testReservedBytes: function(t) {
     var opts = defaultKexInitOpts();
     var cookie = new Buffer(16);
     cookie.fill(8);
 
     var actual = lib.createKexInit(cookie, opts);
-    t.equal(actual[58], 0);
+    t.equal(actual.readUInt32BE(58), 0);
     t.done();
   }
 };
@@ -192,7 +195,7 @@ exports.kexInitParsing = {
       'diffie-hellman-group1-sha1',
       'diffie-hellman-group14-sha1'
     ];
-    var zeroes = new Buffer(38);
+    var zeroes = new Buffer(41);
     zeroes.fill(0);
 
     var message = Buffer.concat([
@@ -208,7 +211,7 @@ exports.kexInitParsing = {
         0x61, 0x31
       ]),
       zeroes
-    ], 113);
+    ], 116);
 
     var kexinit = lib.parseKexInit(message);
     t.deepEqual(kexinit.kexAlgorithms, expected);
@@ -216,7 +219,7 @@ exports.kexInitParsing = {
   },
 
   testFirstPacketFollows: function(t) {
-    var message = new Buffer(59);
+    var message = new Buffer(62);
     message.fill(0);
 
     var kexinit = lib.parseKexInit(message);
@@ -229,12 +232,12 @@ exports.kexInitParsing = {
   },
 
   testReservedByte: function(t) {
-    var message = new Buffer(59);
+    var message = new Buffer(62);
     message.fill(0);
-    message[58] = 9;
+    message[58] = 0x09;
 
     var kexinit = lib.parseKexInit(message);
-    t.strictEqual(kexinit.reserved, 9);
+    t.strictEqual(kexinit.reserved, 0x09000000);
     t.done();
   }
 };
@@ -248,11 +251,113 @@ exports.disconnectCreation = {
   }
 };
 
-exports.newKeysCreation= {
+exports.newKeysCreation = {
   testCreateNewKeys: function(t) {
     var expected = new Buffer([21]).toString('binary');
     var actual = lib.createNewKeys();
     t.equal(actual.toString('binary'), expected);
+    t.done();
+  }
+};
+
+exports.kexdhInitParsing = {
+  throwsWithBadMessageId: function(t) {
+    t.throws(function() {
+      lib.parseKexdhInit(new Buffer([0x0F, 0x00, 0x00, 0x00, 0x00]));
+    }, /message id 15/);
+    t.done();
+  },
+
+  parsesMSBValue: function(t) {
+    var message = new Buffer([0x1e, 0x00, 0x00, 0x00, 0x02, 0x00, 0x80]);
+    var expected = new Buffer([0x80]);
+    var actual = lib.parseKexdhInit(message);
+    t.deepEqual(actual, expected);
+    t.done();
+  },
+
+  parsesNegativeValue: function(t) {
+    var message = new Buffer([0x1e, 0x00, 0x00, 0x00, 0x02, 0xed, 0xcc]);
+    var expected = new Buffer([0xed, 0xcc]);
+    var actual = lib.parseKexdhInit(message);
+    t.deepEqual(actual, expected);
+    t.done();
+  },
+
+  parsesZeroValue: function(t) {
+    var message = new Buffer([0x1e, 0x00, 0x00, 0x00, 0x00]);
+    var expected = new Buffer(0);
+    var actual = lib.parseKexdhInit(message);
+    t.deepEqual(actual, expected);
+    t.done();
+  }
+};
+
+exports.kexdhReplyCreation = {
+  setUp: function(cb) {
+    this._hostKey = new Buffer('hostKey');
+    this._exchangeValue = new Buffer([0x70]);
+    this._signature = new Buffer('signature');
+    this._keyLen = this._hostKey.length;
+    this._valLen = this._exchangeValue.length;
+    this._sigLen = this._signature.length;
+    cb();
+  },
+
+  testArguments: function(t) {
+    var self = this;
+    t.throws(lib.createKexdhReply, /hostKey is a required argument/);
+
+    t.throws(function() {
+      lib.createKexdhReply(self._hostKey);
+    }, /exchangeValue is a required argument/);
+
+    t.throws(function() {
+      lib.createKexdhReply(self._hostKey, self._exchangeValue);
+    }, /signature is a required argument/);
+
+    t.done();
+  },
+
+  testMessageNum: function(t) {
+    var actual = lib.createKexdhReply(this._hostKey, this._exchangeValue,
+      this._signature);
+    t.equal(actual[0], 31);
+    t.done();
+  },
+
+  testHostKey: function(t) {
+    var actual = lib.createKexdhReply(this._hostKey, this._exchangeValue,
+      this._signature);
+    var expected = new Buffer(4 + this._keyLen);
+    expected.writeUInt32BE(this._keyLen, 0);
+    this._hostKey.copy(expected, 4);
+
+    t.deepEqual(actual.slice(1, this._keyLen + 5), expected);
+    t.done();
+  },
+
+  testExchangeValue: function(t) {
+    var actual = lib.createKexdhReply(this._hostKey, this._exchangeValue,
+      this._signature);
+    var offset = 1 + 4 + this._keyLen;
+    var expected = new Buffer(4 + this._valLen);
+    expected.writeUInt32BE(this._valLen, 0);
+    this._exchangeValue.copy(expected, 4);
+
+    t.deepEqual(actual.slice(offset, offset + 4 + this._valLen), expected);
+    t.done();
+  },
+
+  testSignature: function(t) {
+    var actual = lib.createKexdhReply(this._hostKey, this._exchangeValue,
+      this._signature);
+    var offset = 1 + 4 + this._keyLen + 4 + this._valLen;
+    var expected = new Buffer(4 + this._sigLen);
+    expected.writeUInt32BE(this._sigLen, 0);
+    this._signature.copy(expected, 4);
+
+    t.deepEqual(actual.slice(offset, offset + 4 + this._sigLen), expected);
     t.done();
   }
 };
