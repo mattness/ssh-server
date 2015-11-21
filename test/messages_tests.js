@@ -29,6 +29,8 @@ exports.testInterface = function(t) {
     'should have a createServerIdent function');
   t.equal(typeof lib.createKexInit, 'function',
     'should have a createKexInit function');
+  t.equal(typeof lib.parseKexInit, 'function',
+    'should have a parseKexInit function');
   t.done();
 };
 
@@ -172,6 +174,63 @@ exports.kexInitCreation = {
 
     var actual = lib.createKexInit(cookie, opts);
     t.equal(actual[58], 0);
+    t.done();
+  }
+};
+
+exports.kexInitParsing = {
+  setUp: function(cb) {
+    cb();
+  },
+
+  testKexAlgorithms: function(t) {
+    var expected = [
+      'diffie-hellman-group1-sha1',
+      'diffie-hellman-group14-sha1'
+    ];
+    var zeroes = new Buffer(38);
+    zeroes.fill(0);
+
+    var message = Buffer.concat([
+      zeroes.slice(0, 17),
+      new Buffer([
+        0x00, 0x00, 0x00, 0x36, 0x64, 0x69, 0x66, 0x66,
+        0x69, 0x65, 0x2d, 0x68, 0x65, 0x6c, 0x6c, 0x6d,
+        0x61, 0x6e, 0x2d, 0x67, 0x72, 0x6f, 0x75, 0x70,
+        0x31, 0x2d, 0x73, 0x68, 0x61, 0x31, 0x2c, 0x64,
+        0x69, 0x66, 0x66, 0x69, 0x65, 0x2d, 0x68, 0x65,
+        0x6c, 0x6c, 0x6d, 0x61, 0x6e, 0x2d, 0x67, 0x72,
+        0x6f, 0x75, 0x70, 0x31, 0x34, 0x2d, 0x73, 0x68,
+        0x61, 0x31
+      ]),
+      zeroes
+    ], 113);
+
+    var kexinit = lib.parseKexInit(message);
+    t.deepEqual(kexinit.kexAlgorithms, expected);
+    t.done();
+  },
+
+  testFirstPacketFollows: function(t) {
+    var message = new Buffer(59);
+    message.fill(0);
+
+    var kexinit = lib.parseKexInit(message);
+    t.strictEqual(kexinit.firstPacketFollows, false);
+
+    message[57] = 1;
+    kexinit = lib.parseKexInit(message);
+    t.strictEqual(kexinit.firstPacketFollows, true);
+    t.done();
+  },
+
+  testReservedByte: function(t) {
+    var message = new Buffer(59);
+    message.fill(0);
+    message[58] = 9;
+
+    var kexinit = lib.parseKexInit(message);
+    t.strictEqual(kexinit.reserved, 9);
     t.done();
   }
 };
